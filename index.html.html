@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>CONTINUA - App de Adesão Nutricional</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+      background: #f5f5f5;
+      color: #333;
+    }
+    #app {
+      min-height: 100vh;
+    }
+    @keyframes slideIn {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+    .notification {
+      animation: slideIn 0.3s ease-out;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    const brandColor = '#157475';
+    const expectedMeals = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
+    
+    const app = {
+      state: {
+        user: null,
+        screen: 'dashboard',
+        currentPatientId: '1',
+        selectedPatientPanel: '1',
+        patients: [
+          { id: '1', name: 'Tainá', email: 'taina@email.com', phone: '11987654321' },
+          { id: '2', name: 'Lilian', email: 'lilian@email.com', phone: '11987654322' },
+          { id: '3', name: 'Luisa', email: 'luisa@email.com', phone: '11987654323' },
+          { id: '4', name: 'Marciana', email: 'marciana@email.com', phone: '11987654324' },
+        ],
+        meals: [],
+        checkins: [],
+        weights: [],
+        formData: {
+          mealTime: '',
+          status: '',
+          notes: ''
+        },
+        showMenu: false,
+        notifications: []
+      },
+
+      init() {
+        const params = new URLSearchParams(window.location.search);
+        const patientId = params.get('patient');
+        
+        if (patientId && this.state.patients.find(p => p.id === patientId)) {
+          this.state.currentPatientId = patientId;
+          const patientName = this.state.patients.find(p => p.id === patientId)?.name;
+          this.state.user = { type: 'patient', name: patientName, id: patientId };
+          this.state.screen = 'dashboard';
+        }
+
+        this.loadData();
+        this.render();
+        
+        console.log('✅ App iniciado com sucesso!');
+      },
+
+      loadData() {
+        const saved = localStorage.getItem('continua_data');
+        if (saved) {
+          const data = JSON.parse(saved);
+          this.state.meals = data.meals || [];
+          this.state.checkins = data.checkins || [];
+          this.state.weights = data.weights || [];
+        }
+      },
+
+      saveData() {
+        localStorage.setItem('continua_data', JSON.stringify({
+          meals: this.state.meals,
+          checkins: this.state.checkins,
+          weights: this.state.weights
+        }));
+      },
+
+      calculateDailyAdherence(patientId, date) {
+        const dayMeals = this.state.meals.filter(m => 
+          m.patientId === patientId && m.date === date
+        );
+        
+        const completedMeals = dayMeals.filter(m => 
+          m.status === 'done' || m.status === 'adapted'
+        ).length;
+        
+        const adherence = Math.round((completedMeals / expectedMeals.length) * 100);
+        return { adherence, completed: completedMeals, expected: expectedMeals.length };
+      },
+
+      getMealsByDay(patientId, date) {
+        return this.state.meals.filter(m => 
+          m.patientId === patientId && m.date === date
+        );
+      },
+
+      addNotification(message, type = 'info') {
+        const id = Date.now();
+        this.state.notifications.push({ id, message, type });
+        this.render();
+        setTimeout(() => {
+          this.state.notifications = this.state.notifications.filter(n => n.id !== id);
+          this.render();
+        }, 4000);
+      },
+
+      handleLogin(type) {
+        if (type === 'nutritionist') {
+          this.state.user = { type: 'nutritionist', name: 'Thainan' };
+          this.state.screen = 'panel';
+        } else {
+          this.state.user = { type: 'patient', name: this.state.patients[0]?.name, id: '1' };
+          this.state.currentPatientId = '1';
+          this.state.screen = 'dashboard';
+        }
+        this.render();
+      },
+
+      logout() {
+        this.state.user = null;
+        this.state.showMenu = false;
+        this.state.screen = 'dashboard';
+        this.state.formData = {};
+        this.render();
+      },
+
+      addMeal(mealData) {
+        const newMeal = {
+          id: Date.now().toString(),
+          patientId: this.state.currentPatientId,
+          date: new Date().toISOString().split('T')[0],
+          time: mealData.time,
+          status: mealData.status,
+          notes: mealData.notes || '',
+          timestamp: new Date().toISOString()
+        };
+        this.state.meals.push(newMeal);
+        this.saveData();
+        this.addNotification('Refeição registrada com sucesso!', 'success');
+        this.state.screen = 'dashboard';
+        this.state.formData = { mealTime: '', status: '', notes: '' };
+        this.render();
+      },
+
+      addCheckin(checkinData) {
+        const newCheckin = {
+          id: Date.now().toString(),
+          patientId: this.state.currentPatientId,
+          date: new Date().toISOString(),
+          adherence: checkinData.adherence,
+          hunger: checkinData.hunger,
+          sweet: checkinData.sweet,
+          energy: checkinData.energy,
+          anxiety: checkinData.anxiety,
+          control: checkinData.control,
+          difficulty: checkinData.difficulty,
+          needsHelp: checkinData.needsHelp
+        };
+        this.state.checkins.push(newCheckin);
+        this.saveData();
+        this.addNotification('Check-in salvo! Thainan vai analisar sua semana.', 'success');
+        this.state.screen = 'dashboard';
+        this.state.formData = {};
+        this.render();
+      },
+
+      addWeight(weightData) {
+        const newWeight = {
+          id: Date.now().toString(),
+          patientId: this.state.currentPatientId,
+          date: new Date().toISOString().split('T')[0],
+          weight: parseFloat(weightData.weight),
+          feeling: weightData.feeling
+        };
+        this.state.weights.push(newWeight);
+        this.saveData();
+        this.addNotification('Peso registrado!', 'success');
+        this.state.screen = 'dashboard';
+        this.state.formData = {};
+        this.render();
+      },
+
+      renderLogin() {
+        const baseURL = window.location.href.split('?')[0];
+        
+        return `
+          <div style="min-height: 100vh; background: #f5f5f5; display: flex; align-items: center; justify-content: center; padding: 1rem;">
+            <div style="max-width: 500px; width: 100%;">
+              <div style="background: #ffffff; border-radius: 12px; padding: 2rem; border: 0.5px solid ${brandColor}20;">
+                <h1 style="font-size: 28px; font-weight: 500; margin-bottom: 0.5rem; color: ${brandColor};">CONTINUA</h1>
+                <p style="font-size: 13px; color: #666; margin-bottom: 2rem;">App de adesão nutricional</p>
+
+                <div style="margin-bottom: 2rem; padding-bottom: 2rem; border-bottom: 0.5px solid ${brandColor}20;">
+                  <h2 style="font-size: 13px; font-weight: 500; color: #333; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.5px;">Links das pacientes</h2>
+                  
+                  ${this.state.patients.map(patient => `
+                    <div style="margin-bottom: 1rem; padding: 0.75rem; background: #f9f9f9; border-radius: 6px; border: 0.5px solid #e0e0e0;">
+                      <p style="font-size: 12px; font-weight: 500; color: #333; margin: 0 0 6px 0;">${patient.name}</p>
+                      <div style="display: flex; gap: 6px; align-items: center;">
+                        <input type="text" value="${baseURL}?patient=${patient.id}" readonly style="flex: 1; padding: 6px 8px; font-size: 11px; border-radius: 4px; border: 0.5px solid #e0e0e0; background: #ffffff; font-family: monospace;" />
+                        <button onclick="app.copyLink('${baseURL}?patient=${patient.id}', '${patient.name}')" style="padding: 6px 12px; background: ${brandColor}; border: 0.5px solid ${brandColor}; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500; color: #ffffff; white-space: nowrap;">Copiar</button>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+
+                <p style="font-size: 12px; color: #666; margin-bottom: 1.5rem; font-style: italic;">Ou entre como:</p>
+
+                <button onclick="app.handleLogin('patient')" style="width: 100%; padding: 12px; margin-bottom: 12px; background: ${brandColor}; border: 0.5px solid ${brandColor}; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; color: #ffffff;">
+                  Entrar como Paciente
+                </button>
+
+                <button onclick="app.handleLogin('nutritionist')" style="width: 100%; padding: 12px; background: #ffffff; border: 0.5px solid ${brandColor}; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; color: ${brandColor};">
+                  Acessar Painel (Nutricionista)
+                </button>
+
+                <div style="margin-top: 2rem; padding-top: 1rem; border-top: 0.5px solid ${brandColor}20;">
+                  <p style="font-size: 11px; color: #999; margin: 0;">✅ Hospedado no Vercel</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      },
+
+      renderDashboard() {
+        const currentPatient = this.state.patients.find(p => p.id === this.state.currentPatientId);
+        const today = new Date().toISOString().split('T')[0];
+        const todayData = this.calculateDailyAdherence(this.state.currentPatientId, today);
+        
+        const weekMeals = this.state.meals.filter(m => {
+          const mealDate = new Date(m.date);
+          const weekStart = new Date();
+          weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
+          return m.patientId === this.state.currentPatientId && mealDate >= weekStart;
+        });
+        
+        const weekAdherence = Math.round((weekMeals.filter(m => m.status === 'done' || m.status === 'adapted').length / Math.max(weekMeals.length, 1)) * 100);
+        const lastWeight = this.state.weights.filter(w => w.patientId === this.state.currentPatientId).sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+
+        let weekDaysHtml = '';
+        for (let i = 0; i < 7; i++) {
+          const date = new Date();
+          date.setDate(date.getDate() - date.getDay() + 1 + i);
+          const dateStr = date.toISOString().split('T')[0];
+          const dayData = this.calculateDailyAdherence(this.state.currentPatientId, dateStr);
+          const dayColors = { 0: '#e8e8e8', 20: '#ffcccc', 40: '#ffddaa', 60: '#ffffcc', 80: '#ccffcc', 100: '#88dd88' };
+          const colorKey = Math.min(100, Math.floor(dayData.adherence / 20) * 20);
+          const days = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
+          weekDaysHtml += `
+            <div style="background: ${dayColors[colorKey]}; border-radius: 6px; padding: 8px; text-align: center; cursor: pointer; border: 1px solid ${dayData.adherence >= 80 ? brandColor : 'transparent'};" onclick="app.state.screen = 'mealHistory'; app.render();">
+              <p style="font-size: 11px; font-weight: 500; margin: 0 0 4px 0; color: #666;">${days[i]}</p>
+              <p style="font-size: 13px; font-weight: 500; margin: 0; color: ${brandColor};">${dayData.adherence}%</p>
+            </div>
+          `;
+        }
+
+        return `
+          <div style="min-height: 100vh; background: #f5f5f5;">
+            <div style="background: ${brandColor}; color: #ffffff; padding: 1.5rem 1rem; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h1 style="font-size: 18px; font-weight: 500; margin: 0;">Oi, ${currentPatient?.name.split(' ')[0]}!</h1>
+                <p style="font-size: 12px; margin: 4px 0 0 0; opacity: 0.9;">Bem-vindo ao CONTINUA</p>
+              </div>
+              <button onclick="app.state.showMenu = !app.state.showMenu; app.render();" style="background: none; border: none; cursor: pointer; color: inherit; font-size: 20px;">≡</button>
+            </div>
+
+            ${this.state.showMenu ? `
+              <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex;">
+                <div style="background: #ffffff; padding: 1rem; width: 160px; margin-left: auto;">
+                  <button onclick="app.state.showMenu = false; app.render();" style="background: none; border: none; cursor: pointer; font-size: 18px; margin-bottom: 1rem; width: 100%; text-align: right;">✕</button>
+                  <button onclick="app.logout();" style="width: 100%; padding: 10px; background: transparent; border: 0.5px solid ${brandColor}; border-radius: 4px; cursor: pointer; font-size: 13px; color: ${brandColor}; font-weight: 500;">Sair</button>
+                </div>
+              </div>
+            ` : ''}
+
+            <div style="padding: 1rem; max-width: 600px; margin: 0 auto; padding-bottom: 2rem;">
+              <h2 style="font-size: 12px; color: #999; font-weight: 500; margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">Adesão da Semana (%)</h2>
+              <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 1.5rem;">
+                ${weekDaysHtml}
+              </div>
+
+              <div style="background: #ffffff; border-radius: 8px; padding: 1rem; border: 0.5px solid #e0e0e0; margin-bottom: 1rem;">
+                <p style="font-size: 12px; color: #999; margin: 0 0 8px 0; font-weight: 500;">Adesão de Hoje (${new Date(today).toLocaleDateString('pt-BR')})</p>
+                <p style="font-size: 24px; font-weight: 500; margin: 0 0 4px 0; color: ${todayData.adherence >= 80 ? '#28a745' : todayData.adherence >= 60 ? '#ffc107' : '#dc3545'};">${todayData.adherence}%</p>
+                <p style="font-size: 12px; color: #666; margin: 0;">${todayData.completed} de ${todayData.expected} refeições</p>
+              </div>
+
+              <button onclick="app.state.screen = 'meal'; app.state.formData = { mealTime: '', status: '', notes: '' }; app.render();" style="width: 100%; padding: 12px; background: ${brandColor}; border: 0.5px solid ${brandColor}; border-radius: 6px; font-size: 14px; font-weight: 500; color: #ffffff; cursor: pointer; margin-bottom: 1rem;">
+                Registrar refeição hoje
+              </button>
+
+              <div style="background: #ffffff; border-radius: 8px; padding: 1rem; border: 0.5px solid #e0e0e0; margin-bottom: 1rem;">
+                <p style="font-size: 12px; color: #999; margin: 0 0 8px 0; font-weight: 500;">Adesão Semanal Média</p>
+                <p style="font-size: 18px; font-weight: 500; margin: 0 0 4px 0; color: ${brandColor};">${weekAdherence}%</p>
+                <p style="font-size: 12px; color: ${weekAdherence >= 80 ? '#28a745' : '#666'}; margin: 0;">${weekMeals.filter(m => m.status === 'done' || m.status === 'adapted').length} de ${Math.max(weekMeals.length, 35)} refeições</p>
+              </div>
+
+              <div onclick="app.state.screen = 'checkin'; app.state.formData = {}; app.render();" style="background: #ffffff; border-radius: 8px; padding: 1rem; border: 0.5px solid ${brandColor}20; margin-bottom: 1rem; cursor: pointer;">
+                <p style="font-size: 12px; color: #999; margin: 0 0 8px 0; font-weight: 500;">Próximo passo</p>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <p style="font-size: 14px; font-weight: 500; margin: 0; color: ${brandColor};">Check-in semanal</p>
+                    <p style="font-size: 12px; color: #999; margin: 4px 0 0 0;">Domingo à noite</p>
+                  </div>
+                  <span style="font-size: 18px;">›</span>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+                <button onclick="app.state.screen = 'weight'; app.state.formData = {}; app.render();" style="padding: 12px; background: #ffffff; border: 0.5px solid ${brandColor}; border-radius: 6px; font-size: 13px; font-weight: 500; color: ${brandColor}; cursor: pointer;">
+                  Registrar peso
+                </button>
+                <button onclick="app.state.screen = 'mealHistory'; app.render();" style="padding: 12px; background: ${brandColor}; border: 0.5px solid ${brandColor}; border-radius: 6px; font-size: 13px; font-weight: 500; color: #ffffff; cursor: pointer;">
+                  Ver refeições
+                </button>
+                <button onclick="app.state.screen = 'weightHistory'; app.render();" style="padding: 12px; background: ${brandColor}; border: 0.5px solid ${brandColor}; border-radius: 6px; font-size: 13px; font-weight: 500; color: #ffffff; cursor: pointer;">
+                  Ver peso
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      },
+
+      renderMeal() {
+        const mealTimeLabel = {
+          breakfast: 'Café da manhã',
+          snack1: 'Lanche da manhã',
+          lunch: 'Almoço',
+          snack2: 'Lanche da tarde',
+          dinner: 'Jantar'
+        };
+
+        return `
+          <div style="min-height: 100vh; background: #f5f5f5;">
+            <div style="background: ${brandColor}; color: #ffffff; padding: 1.5rem 1rem;">
+              <h1 style="font-size: 16px; font-weight: 500; margin: 0;">Registrar refeição</h1>
+            </div>
+
+            <div style="padding: 1rem; max-width: 600px; margin: 0 auto;">
+              <div style="background: #ffffff; border-radius: 8px; padding: 1.5rem; border: 0.5px solid #e0e0e0;">
+                
+                <label style="display: block; margin-bottom: 1.5rem;">
+                  <p style="font-size: 13px; font-weight: 500; margin-bottom: 6px; color: #333;">Qual refeição?</p>
+                  <select id="mealTime" onchange="app.state.formData.mealTime = this.value; app.render();" style="width: 100%; padding: 8px; border-radius: 4px; border: 0.5px solid ${brandColor}40; font-size: 13px; font-family: inherit;">
+                    <option value="">Selecione</option>
+                    <option value="breakfast" ${this.state.formData.mealTime === 'breakfast' ? 'selected' : ''}>Café da manhã</option>
+                    <option value="snack1" ${this.state.formData.mealTime === 'snack1' ? 'selected' : ''}>Lanche da manhã</option>
+                    <option value="lunch" ${this.state.formData.mealTime === 'lunch' ? 'selected' : ''}>Almoço</option>
+                    <option value="snack2" ${this.state.formData.mealTime === 'snack2' ? 'selected' : ''}>Lanche da tarde</option>
+                    <option value="dinner" ${this.state.formData.mealTime === 'dinner' ? 'selected' : ''}>Jantar</option>
+                  </select>
+                </label>
+
+                ${this.state.formData.mealTime ? `
+                  <div style="background: #d4f0ed; padding: 10px; border-radius: 6px; margin-bottom: 1.5rem; font-size: 12px; color: ${brandColor}; font-weight: 500;">
+                    ✓ Refeição selecionada: <strong>${mealTimeLabel[this.state.formData.mealTime]}</strong>
+                  </div>
+                ` : ''}
+
+                <div style="margin-bottom: 1.5rem;">
+                  <p style="font-size: 13px; font-weight: 500; margin-bottom: 1rem; color: #333;">Como foi essa refeição?</p>
+                  ${['done', 'adapted', 'improvised', 'skipped'].map(status => `
+                    <button onclick="app.state.formData.status = '${status}'; app.render();" style="width: 100%; padding: 12px; margin-bottom: 8px; background: ${this.state.formData.status === status ? brandColor : '#ffffff'}; border: 0.5px solid ${this.state.formData.status === status ? brandColor : '#e0e0e0'}; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; color: ${this.state.formData.status === status ? '#ffffff' : '#333'}; transition: all 0.2s;">
+                      ${status === 'done' ? '✓ Fiz como planejado' : status === 'adapted' ? '~ Adaptei bem' : status === 'improvised' ? '! Improvisei' : '× Pulei'}
+                    </button>
+                  `).join('')}
+                </div>
+
+                <label style="display: block; margin-bottom: 1.5rem;">
+                  <p style="font-size: 13px; font-weight: 500; margin-bottom: 6px; color: #333;">Observação (opcional)</p>
+                  <textarea id="mealNotes" placeholder="Ex: comi um doce, pulei porque estava ocupada" onchange="app.state.formData.notes = this.value; app.render();" style="width: 100%; padding: 8px; border-radius: 4px; border: 0.5px solid ${brandColor}40; font-size: 13px; font-family: inherit; min-height: 60px; resize: vertical;">${this.state.formData.notes || ''}</textarea>
+                </label>
+
+                <button onclick="app.saveMealFixed();" style="width: 100%; padding: 12px; background: ${this.state.formData.mealTime && this.state.formData.status ? brandColor : '#ccc'}; border: 0.5px solid ${this.state.formData.mealTime && this.state.formData.status ? brandColor : '#ccc'}; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; color: #ffffff; margin-bottom: 8px; transition: all 0.2s;" ${!this.state.formData.mealTime || !this.state.formData.status ? 'disabled' : ''}>
+                  ${!this.state.formData.mealTime || !this.state.formData.status ? '⏸️ Selecione refeição e status' : '✓ Pronto!'}
+                </button>
+
+                <button onclick="app.state.screen = 'dashboard'; app.state.formData = {}; app.render();" style="width: 100%; padding: 12px; background: #ffffff; border: 0.5px solid ${brandColor}; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; color: ${brandColor};">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      },
+
+      saveMealFixed() {
+        if (!this.state.formData.mealTime) {
+          this.addNotification('Selecione a refeição', 'error');
+          return;
+        }
+        if (!this.state.formData.status) {
+          this.addNotification('Selecione o status da refeição', 'error');
+          return;
+        }
+
+        const mealData = {
+          time: this.state.formData.mealTime,
+          status: this.state.formData.status,
+          notes: this.state.formData.notes || ''
+        };
+
+        this.addMeal(mealData);
+      },
+
+      renderMealHistory() {
+        const patientMeals = this.state.meals.filter(m => m.patientId === this.state.currentPatientId).sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        const mealLabels = {
+          breakfast: '☕ Café da manhã',
+          snack1: '🥤 Lanche da manhã',
+          lunch: '🍽️ Almoço',
+          snack2: '🥗 Lanche da tarde',
+          dinner: '🌙 Jantar'
+        };
+
+        const statusColors = {
+          done: '#28a745',
+          adapted: '#ffc107',
+          improvised: '#fd7e14',
+          skipped: '#dc3545'
+        };
+
+        const statusLabels = {
+          done: '✓ Como planejado',
+          adapted: '~ Adaptado',
+          improvised: '! Improviso',
+          skipped: '× Pulado'
+        };
+
+        // Agrupar por data
+        const mealsByDate = {};
+        patientMeals.forEach(meal => {
+          if (!mealsByDate[meal.date]) mealsByDate[meal.date] = [];
+          mealsByDate[meal.date].push(meal);
+        });
+
+        const sortedDates = Object.keys(mealsByDate).sort((a, b) => new Date(b) - new Date(a));
+
+        return `
+          <div style="min-height: 100vh; background: #f5f5f5;">
+            <div style="background: ${brandColor}; color: #ffffff; padding: 1.5rem 1rem; display: flex; justify-content: space-between; align-items: center;">
+              <h1 style="font-size: 16px; font-weight: 500; margin: 0;">Histórico de Refeições</h1>
+              <button onclick="app.state.screen = 'dashboard'; app.render();" style="background: none; border: none; cursor: pointer; color: inherit; font-size: 20px;">✕</button>
+            </div>
+
+            <div style="padding: 1rem; max-width: 600px; margin: 0 auto; padding-bottom: 2rem;">
+              ${patientMeals.length > 0 ? `
+                <h3 style="font-size: 12px; color: #666; font-weight: 500; margin-bottom: 1rem;">Total: ${patientMeals.length} refeições registradas</h3>
+                <div style="display: grid; gap: 1.5rem;">
+                  ${sortedDates.map(date => {
+                    const dayData = this.calculateDailyAdherence(this.state.currentPatientId, date);
+                    const mealsOfDay = mealsByDate[date];
+                    
+                    return `
+                      <div style="background: #ffffff; border-radius: 8px; overflow: hidden; border: 0.5px solid #e0e0e0;">
+                        <div style="background: ${brandColor}; color: #ffffff; padding: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                          <div>
+                            <p style="font-size: 13px; font-weight: 500; margin: 0;">${new Date(date).toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                          </div>
+                          <div style="text-align: right;">
+                            <p style="font-size: 18px; font-weight: 500; margin: 0;">${dayData.adherence}%</p>
+                            <p style="font-size: 11px; opacity: 0.9; margin: 2px 0 0 0;">${dayData.completed}/${dayData.expected} refeições</p>
+                          </div>
+                        </div>
+                        
+                        <div style="padding: 1rem;">
+                          ${expectedMeals.map(mealType => {
+                            const meal = mealsOfDay.find(m => m.time === mealType);
+                            const isCompleted = meal && (meal.status === 'done' || meal.status === 'adapted');
+                            const mealInfo = {
+                              breakfast: { label: '☕ Café da manhã', emoji: '☕' },
+                              snack1: { label: '🥤 Lanche da manhã', emoji: '🥤' },
+                              lunch: { label: '🍽️ Almoço', emoji: '🍽️' },
+                              snack2: { label: '🥗 Lanche da tarde', emoji: '🥗' },
+                              dinner: { label: '🌙 Jantar', emoji: '🌙' }
+                            };
+                            
+                            if (meal) {
+                              return `
+                                <div style="margin-bottom: 8px; padding: 10px; background: #f9f9f9; border-left: 4px solid ${statusColors[meal.status]}; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+                                  <div style="flex: 1;">
+                                    <p style="font-size: 13px; font-weight: 500; margin: 0;">${mealInfo[mealType].label}</p>
+                                    ${meal.notes ? `<p style="font-size: 11px; color: #666; margin: 4px 0 0 0;">📝 ${meal.notes}</p>` : ''}
+                                  </div>
+                                  <span style="background: ${statusColors[meal.status]}; color: #ffffff; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: 500; white-space: nowrap; margin-left: 8px;">${statusLabels[meal.status]}</span>
+                                </div>
+                              `;
+                            } else {
+                              return `
+                                <div style="margin-bottom: 8px; padding: 10px; background: #f0f0f0; border-left: 4px solid #ccc; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; opacity: 0.6;">
+                                  <p style="font-size: 13px; color: #999; margin: 0;">${mealInfo[mealType].label}</p>
+                                  <span style="background: #ccc; color: #ffffff; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: 500;">Não registrada</span>
+                                </div>
+                              `;
+                            }
+                          }).join('')}
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              ` : `
+                <div style="background: #ffffff; border-radius: 8px; padding: 2rem; text-align: center; border: 0.5px solid #e0e0e0;">
+                  <p style="color: #999; margin: 0;">Nenhuma refeição registrada ainda</p>
+                  <button onclick="app.state.screen = 'meal'; app.state.formData = { mealTime: '', status: '', notes: '' }; app.render();" style="margin-top: 1rem; padding: 10px 20px; background: ${brandColor}; border: 0.5px solid ${brandColor}; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; color: #ffffff;">
+                    Registrar primeira refeição
+                  </button>
+                </div>
+              `}
+            </div>
+          </div>
+        `;
+      },
+
+      renderCheckin() {
+        return `
+          <div style="min-height: 100vh; background: #f5f5f5;">
+            <div style="background: ${brandColor}; color: #ffffff; padding: 1.5rem 1rem;">
+              <h1 style="font-size: 16px; font-weight: 500; margin: 0;">Check-in semanal</h1>
+            </div>
+
+            <div style="padding: 1rem; max-width: 600px; margin: 0 auto; padding-bottom: 2rem;">
+              <div style="background: #ffffff; border-radius: 8px; padding: 1.5rem; border: 0.5px solid #e0e0e0;">
+
+                ${['adherence', 'hunger', 'sweet', 'energy', 'anxiety', 'control'].map(key => {
+                  const labels = {
+                    adherence: 'Como foi sua adesão?',
+                    hunger: 'Seu nível de fome?',
+                    sweet: 'Vontade de doce?',
+                    energy: 'Sua energia?',
+                    anxiety: 'Ansiedade interferiu?',
+                    control: 'Sensação de controle?'
+                  };
+                  return `
+                    <div style="margin-bottom: 1.5rem;">
+                      <label style="display: block; margin-bottom: 0.75rem;">
+                        <p style="font-size: 12px; font-weight: 500; color: #333; margin: 0;">${labels[key]}</p>
+                      </label>
+                      <div style="display: flex; gap: 6px; justify-content: space-between;">
+                        ${[1,2,3,4,5].map(val => `
+                          <button onclick="app.state.formData.${key} = ${val}; app.render();" style="width: 100%; padding: 8px; background: ${this.state.formData[key] === val ? brandColor : '#f5f5f5'}; border: 0.5px solid ${this.state.formData[key] === val ? brandColor : '#e0e0e0'}; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: ${this.state.formData[key] === val ? 500 : 400}; color: ${this.state.formData[key] === val ? '#ffffff' : '#666'};">
+                            ${val}
+                          </button>
+                        `).join('')}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+
+                <label style="display: block; margin-bottom: 1.5rem;">
+                  <p style="font-size: 12px; font-weight: 500; margin-bottom: 6px; color: #333;">Qual foi a principal dificuldade? (opcional)</p>
+                  <textarea id="checkinDifficulty" placeholder="Ex: muito doce, não consegui parar" style="width: 100%; padding: 8px; border-radius: 4px; border: 0.5px solid ${brandColor}40; font-size: 13px; min-height: 50px;"></textarea>
+                </label>
+
+                <label style="display: block; margin-bottom: 1.5rem;">
+                  <input type="checkbox" id="checkinHelp" style="margin-right: 8px; accent-color: ${brandColor};" />
+                  <span style="font-size: 13px; color: #333;">Estou travada e preciso de ajuda</span>
+                </label>
+
+                <button onclick="app.saveCheckin();" style="width: 100%; padding: 12px; background: ${brandColor}; border: 0.5px solid ${brandColor}; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; color: #ffffff; margin-bottom: 8px;">
+                  Enviar check-in
+                </button>
+
+                <button onclick="app.state.screen = 'dashboard'; app.state.formData = {}; app.render();" style="width: 100%; padding: 12px; background: #ffffff; border: 0.5px solid ${brandColor}; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; color: ${brandColor};">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      },
+
+      renderWeight() {
+        return `
+          <div style="min-height: 100vh; background: #f5f5f5;">
+            <div style="background: ${brandColor}; color: #ffffff; padding: 1.5rem 1rem;">
+              <h1 style="font-size: 16px; font-weight: 500; margin: 0;">Registrar peso</h1>
+            </div>
+
+            <div style="padding: 1rem; max-width: 600px; margin: 0 auto;">
+              <div style="background: #ffffff; border-radius: 8px; padding: 1.5rem; border: 0.5px solid #e0e0e0;">
+
+                <label style="display: block; margin-bottom: 1.5rem;">
+                  <p style="font-size: 13px; font-weight: 500; margin-bottom: 6px; color: #333;">Quanto você pesa?</p>
+                  <input type="number" id="weightInput" step="0.1" placeholder="Ex: 75.2" style="width: 100%; padding: 8px; border-radius: 4px; border: 0.5px solid ${brandColor}40; font-size: 13px; font-family: inherit;" />
+                </label>
+
+                <label style="display: block; margin-bottom: 1.5rem;">
+                  <p style="font-size: 13px; font-weight: 500; margin-bottom: 6px; color: #333;">Como você se sente com seu peso?</p>
+                  <select id="weightFeeling" style="width: 100%; padding: 8px; border-radius: 4px; border: 0.5px solid ${brandColor}40; font-size: 13px; font-family: inherit;">
+                    <option value="">Selecione</option>
+                    <option value="terrible">Péssimo</option>
+                    <option value="bad">Ruim</option>
+                    <option value="ok">Ok</option>
+                    <option value="good">Bem</option>
+                    <option value="excellent">Ótimo</option>
+                  </select>
+                </label>
+
+                <button onclick="app.saveWeight();" style="width: 100%; padding: 12px; background: ${brandColor}; border: 0.5px solid ${brandColor}; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; color: #ffffff; margin-bottom: 8px;">
+                  Registrar
+                </button>
+
+                <button onclick="app.state.screen = 'dashboard'; app.state.formData = {}; app.render();" style="width: 100%; padding: 12px; background: #ffffff; border: 0.5px solid ${brandColor}; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; color: ${brandColor};">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      },
+
+      renderWeightHistory() {
+        const patientWeights = this.state.weights.filter(w => w.patientId === this.state.currentPatientId).sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        const feelingLabels = {
+          terrible: '😢 Péssimo',
+          bad: '😞 Ruim',
+          ok: '😐 Ok',
+          good: '😊 Bem',
+          excellent: '😄 Ótimo'
+        };
+
+        const feelingColors = {
+          terrible: '#dc3545',
+          bad: '#fd7e14',
+          ok: '#ffc107',
+          good: '#17a2b8',
+          excellent: '#28a745'
+        };
+
+        return `
+          <div style="min-height: 100vh; background: #f5f5f5;">
+            <div style="background: ${brandColor}; color: #ffffff; padding: 1.5rem 1rem; display: flex; justify-content: space-between; align-items: center;">
+              <h1 style="font-size: 16px; font-weight: 500; margin: 0;">Histórico de Peso</h1>
+              <button onclick="app.state.screen = 'dashboard'; app.render();" style="background: none; border: none; cursor: pointer; color: inherit; font-size: 20px;">✕</button>
+            </div>
+
+            <div style="padding: 1rem; max-width: 600px; margin: 0 auto; padding-bottom: 2rem;">
+              ${patientWeights.length > 0 ? `
+                <h3 style="font-size: 12px; color: #666; font-weight: 500; margin-bottom: 1rem;">Total: ${patientWeights.length} registros</h3>
+                
+                ${patientWeights.length > 1 ? `
+                  <div style="background: #ffffff; border-radius: 8px; padding: 1rem; border: 0.5px solid #e0e0e0; margin-bottom: 1.5rem;">
+                    <p style="font-size: 12px; color: #999; margin: 0 0 8px 0; font-weight: 500;">Variação de peso</p>
+                    ${(() => {
+                      const firstWeight = patientWeights[patientWeights.length - 1].weight;
+                      const lastWeight = patientWeights[0].weight;
+                      const diff = (lastWeight - firstWeight).toFixed(1);
+                      const diffPercent = ((diff / firstWeight) * 100).toFixed(1);
+                      const direction = diff > 0 ? '📈' : diff < 0 ? '📉' : '➡️';
+                      const color = diff > 0 ? '#dc3545' : diff < 0 ? '#28a745' : '#666';
+                      
+                      return `
+                        <p style="font-size: 16px; font-weight: 500; margin: 0; color: ${color};">
+                          ${direction} ${Math.abs(diff)}kg (${Math.abs(diffPercent)}%)
+                        </p>
+                      `;
+                    })()}
+                  </div>
+                ` : ''}
+
+                <div style="display: grid; gap: 1rem;">
+                  ${patientWeights.map(weight => `
+                    <div style="background: #ffffff; border-radius: 8px; padding: 1rem; border: 0.5px solid #e0e0e0;">
+                      <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                        <div>
+                          <p style="font-size: 14px; font-weight: 500; margin: 0; color: #333;">${weight.weight}kg</p>
+                          <p style="font-size: 11px; color: #999; margin: 4px 0 0 0;">${new Date(weight.date).toLocaleDateString('pt-BR')}</p>
+                        </div>
+                        ${weight.feeling ? `
+                          <span style="background: ${feelingColors[weight.feeling]}; color: #ffffff; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;">${feelingLabels[weight.feeling]}</span>
+                        ` : ''}
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              ` : `
+                <div style="background: #ffffff; border-radius: 8px; padding: 2rem; text-align: center; border: 0.5px solid #e0e0e0;">
+                  <p style="color: #999; margin: 0;">Nenhum peso registrado ainda</p>
+                  <button onclick="app.state.screen = 'weight'; app.state.formData = {}; app.render();" style="margin-top: 1rem; padding: 10px 20px; background: ${brandColor}; border: 0.5px solid ${brandColor}; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; color: #ffffff;">
+                    Registrar primeiro peso
+                  </button>
+                </div>
+              `}
+            </div>
+          </div>
+        `;
+      },
+
+      renderPanel() {
+        const patientStats = this.state.patients.map(patient => {
+          const pMeals = this.state.meals.filter(m => m.patientId === patient.id);
+          const pWeights = this.state.weights.filter(w => w.patientId === patient.id);
+          const pCheckins = this.state.checkins.filter(c => c.patientId === patient.id);
+          const adherence = pMeals.length > 0 ? Math.round((pMeals.filter(m => m.status === 'done' || m.status === 'adapted').length / pMeals.length) * 100) : 0;
+
+          return { ...patient, mealsCount: pMeals.length, weightsCount: pWeights.length, checkinsCount: pCheckins.length, adherence, meals: pMeals, checkins: pCheckins, weights: pWeights };
+        });
+
+        const mealLabels = {
+          breakfast: '☕ Café da manhã',
+          snack1: '🥤 Lanche da manhã',
+          lunch: '🍽️ Almoço',
+          snack2: '🥗 Lanche da tarde',
+          dinner: '🌙 Jantar'
+        };
+
+        const statusColors = {
+          done: '#28a745',
+          adapted: '#ffc107',
+          improvised: '#fd7e14',
+          skipped: '#dc3545'
+        };
+
+        const statusLabels = {
+          done: '✓ Como planejado',
+          adapted: '~ Adaptado',
+          improvised: '! Improviso',
+          skipped: '× Pulado'
+        };
+
+        // Se está visualizando histórico de peso
+        if (this.state.screen === 'weightHistoryNutrionist') {
+          const selectedPatient = this.state.patients.find(p => p.id === this.state.selectedPatientPanel);
+          const patientWeights = this.state.weights.filter(w => w.patientId === this.state.selectedPatientPanel).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+          const feelingLabels = {
+            terrible: '😢 Péssimo',
+            bad: '😞 Ruim',
+            ok: '😐 Ok',
+            good: '😊 Bem',
+            excellent: '😄 Ótimo'
+          };
+
+          const feelingColors = {
+            terrible: '#dc3545',
+            bad: '#fd7e14',
+            ok: '#ffc107',
+            good: '#17a2b8',
+            excellent: '#28a745'
+          };
+
+          return `
+            <div style="min-height: 100vh; background: #f5f5f5;">
+              <div style="background: ${brandColor}; color: #ffffff; padding: 1.5rem 1rem; display: flex; justify-content: space-between; align-items: center;">
+                <h1 style="font-size: 16px; font-weight: 500; margin: 0;">Histórico de Peso</h1>
+                <button onclick="app.state.screen = 'panel'; app.render();" style="background: none; border: none; cursor: pointer; color: inherit; font-size: 20px;">✕</button>
+              </div>
+
+              <div style="padding: 1rem; max-width: 700px; margin: 0 auto; padding-bottom: 2rem;">
+                <h2 style="font-size: 14px; font-weight: 500; color: ${brandColor}; margin-bottom: 1.5rem;">${selectedPatient.name} - ${patientWeights.length} registros</h2>
+
+                ${patientWeights.length > 0 ? `
+                  ${patientWeights.length > 1 ? `
+                    <div style="background: #ffffff; border-radius: 8px; padding: 1rem; border: 0.5px solid #e0e0e0; margin-bottom: 1.5rem;">
+                      <p style="font-size: 12px; color: #999; margin: 0 0 8px 0; font-weight: 500;">Variação total de peso</p>
+                      ${(() => {
+                        const firstWeight = patientWeights[patientWeights.length - 1].weight;
+                        const lastWeight = patientWeights[0].weight;
+                        const diff = (lastWeight - firstWeight).toFixed(1);
+                        const diffPercent = ((diff / firstWeight) * 100).toFixed(1);
+                        const direction = diff > 0 ? '📈' : diff < 0 ? '📉' : '➡️';
+                        const color = diff > 0 ? '#dc3545' : diff < 0 ? '#28a745' : '#666';
+                        
+                        return `
+                          <p style="font-size: 16px; font-weight: 500; margin: 0; color: ${color};">
+                            ${direction} ${Math.abs(diff)}kg (${Math.abs(diffPercent)}%)
+                          </p>
+                        `;
+                      })()}
+                    </div>
+                  ` : ''}
+
+                  <div style="display: grid; gap: 1rem;">
+                    ${patientWeights.map(weight => `
+                      <div style="background: #ffffff; border-radius: 8px; padding: 1rem; border: 0.5px solid #e0e0e0;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                          <div>
+                            <p style="font-size: 14px; font-weight: 500; margin: 0; color: #333;">${weight.weight}kg</p>
+                            <p style="font-size: 11px; color: #999; margin: 4px 0 0 0;">${new Date(weight.date).toLocaleDateString('pt-BR')}</p>
+                          </div>
+                          ${weight.feeling ? `
+                            <span style="background: ${feelingColors[weight.feeling]}; color: #ffffff; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;">${feelingLabels[weight.feeling]}</span>
+                          ` : ''}
+                        </div>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : `
+                  <div style="background: #ffffff; border-radius: 8px; padding: 2rem; text-align: center;">
+                    <p style="color: #999;">Nenhum peso registrado</p>
+                  </div>
+                `}
+              </div>
+            </div>
+          `;
+        }
+
+        // Se está visualizando histórico de refeições
+        if (this.state.screen === 'mealHistoryNutrionist') {
+          const selectedPatient = this.state.patients.find(p => p.id === this.state.selectedPatientPanel);
+          const patientMeals = this.state.meals.filter(m => m.patientId === this.state.selectedPatientPanel).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+          const mealsByDate = {};
+          patientMeals.forEach(meal => {
+            if (!mealsByDate[meal.date]) mealsByDate[meal.date] = [];
+            mealsByDate[meal.date].push(meal);
+          });
+
+          const sortedDates = Object.keys(mealsByDate).sort((a, b) => new Date(b) - new Date(a));
+
+          return `
+            <div style="min-height: 100vh; background: #f5f5f5;">
+              <div style="background: ${brandColor}; color: #ffffff; padding: 1.5rem 1rem; display: flex; justify-content: space-between; align-items: center;">
+                <h1 style="font-size: 16px; font-weight: 500; margin: 0;">Histórico de Refeições</h1>
+                <button onclick="app.state.screen = 'panel'; app.render();" style="background: none; border: none; cursor: pointer; color: inherit; font-size: 20px;">✕</button>
+              </div>
+
+              <div style="padding: 1rem; max-width: 700px; margin: 0 auto; padding-bottom: 2rem;">
+                <h2 style="font-size: 14px; font-weight: 500; color: ${brandColor}; margin-bottom: 1.5rem;">${selectedPatient.name} - ${patientMeals.length} refeições</h2>
+
+                ${patientMeals.length > 0 ? `
+                  <div style="display: grid; gap: 1.5rem;">
+                    ${sortedDates.map(date => {
+                      const dayData = this.calculateDailyAdherence(this.state.selectedPatientPanel, date);
+                      const mealsOfDay = mealsByDate[date];
+                      
+                      return `
+                        <div style="background: #ffffff; border-radius: 8px; overflow: hidden; border: 0.5px solid #e0e0e0;">
+                          <div style="background: ${brandColor}; color: #ffffff; padding: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                              <p style="font-size: 13px; font-weight: 500; margin: 0;">${new Date(date).toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                            </div>
+                            <div style="text-align: right;">
+                              <p style="font-size: 18px; font-weight: 500; margin: 0;">${dayData.adherence}%</p>
+                              <p style="font-size: 11px; opacity: 0.9; margin: 2px 0 0 0;">${dayData.completed}/${dayData.expected} refeições</p>
+                            </div>
+                          </div>
+                          
+                          <div style="padding: 1rem;">
+                            ${expectedMeals.map(mealType => {
+                              const meal = mealsOfDay.find(m => m.time === mealType);
+                              const mealInfo = {
+                                breakfast: { label: '☕ Café da manhã', emoji: '☕' },
+                                snack1: { label: '🥤 Lanche da manhã', emoji: '🥤' },
+                                lunch: { label: '🍽️ Almoço', emoji: '🍽️' },
+                                snack2: { label: '🥗 Lanche da tarde', emoji: '🥗' },
+                                dinner: { label: '🌙 Jantar', emoji: '🌙' }
+                              };
+                              
+                              if (meal) {
+                                return `
+                                  <div style="margin-bottom: 8px; padding: 10px; background: #f9f9f9; border-left: 4px solid ${statusColors[meal.status]}; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+                                    <div style="flex: 1;">
+                                      <p style="font-size: 13px; font-weight: 500; margin: 0;">${mealInfo[mealType].label}</p>
+                                      ${meal.notes ? `<p style="font-size: 11px; color: #666; margin: 4px 0 0 0;">📝 ${meal.notes}</p>` : ''}
+                                    </div>
+                                    <span style="background: ${statusColors[meal.status]}; color: #ffffff; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: 500; white-space: nowrap; margin-left: 8px;">${statusLabels[meal.status]}</span>
+                                  </div>
+                                `;
+                              } else {
+                                return `
+                                  <div style="margin-bottom: 8px; padding: 10px; background: #f0f0f0; border-left: 4px solid #ccc; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; opacity: 0.6;">
+                                    <p style="font-size: 13px; color: #999; margin: 0;">${mealInfo[mealType].label}</p>
+                                    <span style="background: #ccc; color: #ffffff; padding: 3px 8px; border-radius: 3px; font-size: 10px; font-weight: 500;">Não registrada</span>
+                                  </div>
+                                `;
+                              }
+                            }).join('')}
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                ` : `
+                  <div style="background: #ffffff; border-radius: 8px; padding: 2rem; text-align: center;">
+                    <p style="color: #999;">Nenhuma refeição registrada</p>
+                  </div>
+                `}
+              </div>
+            </div>
+          `;
+        }
+
+        // Se está visualizando histórico de check-ins
+        if (this.state.screen === 'checkinHistory') {
+          const selectedPatient = this.state.patients.find(p => p.id === this.state.selectedPatientPanel);
+          const patientCheckins = this.state.checkins.filter(c => c.patientId === this.state.selectedPatientPanel).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+          return `
+            <div style="min-height: 100vh; background: #f5f5f5;">
+              <div style="background: ${brandColor}; color: #ffffff; padding: 1.5rem 1rem; display: flex; justify-content: space-between; align-items: center;">
+                <h1 style="font-size: 16px; font-weight: 500; margin: 0;">Histórico de Check-ins</h1>
+                <button onclick="app.state.screen = 'panel'; app.render();" style="background: none; border: none; cursor: pointer; color: inherit; font-size: 20px;">✕</button>
+              </div>
+
+              <div style="padding: 1rem; max-width: 700px; margin: 0 auto; padding-bottom: 2rem;">
+                <h2 style="font-size: 14px; font-weight: 500; color: ${brandColor}; margin-bottom: 1.5rem;">${selectedPatient.name} - ${patientCheckins.length} check-ins</h2>
+
+                ${patientCheckins.length > 0 ? `
+                  <div style="display: grid; gap: 1rem;">
+                    ${patientCheckins.map(checkin => `
+                      <div style="background: #ffffff; border-radius: 8px; padding: 1.5rem; border: 0.5px solid #e0e0e0;">
+                        <p style="font-size: 12px; color: #999; font-weight: 500; margin: 0 0 1rem 0;">📅 ${new Date(checkin.date).toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1rem;">
+                          <div style="padding: 10px; background: #f9f9f9; border-radius: 6px; text-align: center;">
+                            <p style="font-size: 11px; color: #666; margin: 0 0 6px 0;">Adesão</p>
+                            <p style="font-size: 20px; font-weight: 500; color: ${brandColor}; margin: 0;">${checkin.adherence}/5</p>
+                          </div>
+                          <div style="padding: 10px; background: #f9f9f9; border-radius: 6px; text-align: center;">
+                            <p style="font-size: 11px; color: #666; margin: 0 0 6px 0;">Fome</p>
+                            <p style="font-size: 20px; font-weight: 500; color: ${brandColor}; margin: 0;">${checkin.hunger}/5</p>
+                          </div>
+                          <div style="padding: 10px; background: #f9f9f9; border-radius: 6px; text-align: center;">
+                            <p style="font-size: 11px; color: #666; margin: 0 0 6px 0;">Vontade Doce</p>
+                            <p style="font-size: 20px; font-weight: 500; color: ${brandColor}; margin: 0;">${checkin.sweet}/5</p>
+                          </div>
+                          <div style="padding: 10px; background: #f9f9f9; border-radius: 6px; text-align: center;">
+                            <p style="font-size: 11px; color: #666; margin: 0 0 6px 0;">Energia</p>
+                            <p style="font-size: 20px; font-weight: 500; color: ${brandColor}; margin: 0;">${checkin.energy}/5</p>
+                          </div>
+                          <div style="padding: 10px; background: #f9f9f9; border-radius: 6px; text-align: center;">
+                            <p style="font-size: 11px; color: #666; margin: 0 0 6px 0;">Ansiedade</p>
+                            <p style="font-size: 20px; font-weight: 500; color: ${brandColor}; margin: 0;">${checkin.anxiety}/5</p>
+                          </div>
+                          <div style="padding: 10px; background: #f9f9f9; border-radius: 6px; text-align: center;">
+                            <p style="font-size: 11px; color: #666; margin: 0 0 6px 0;">Controle</p>
+                            <p style="font-size: 20px; font-weight: 500; color: ${brandColor}; margin: 0;">${checkin.control}/5</p>
+                          </div>
+                        </div>
+
+                        ${checkin.difficulty ? `
+                          <div style="padding: 10px; background: #fff3cd; border-radius: 6px; border-left: 4px solid #ffc107; margin-bottom: 1rem;">
+                            <p style="font-size: 11px; font-weight: 500; color: #666; margin: 0 0 4px 0;">Dificuldade reportada:</p>
+                            <p style="font-size: 12px; color: #333; margin: 0;">${checkin.difficulty}</p>
+                          </div>
+                        ` : ''}
+
+                        ${checkin.needsHelp ? `
+                          <div style="padding: 10px; background: #f8d7da; border-radius: 6px; border-left: 4px solid #dc3545;">
+                            <p style="font-size: 11px; font-weight: 500; color: #721c24; margin: 0;">⚠️ Paciente solicitou ajuda</p>
+                          </div>
+                        ` : ''}
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : `
+                  <div style="background: #ffffff; border-radius: 8px; padding: 2rem; text-align: center;">
+                    <p style="color: #999;">Nenhum check-in registrado ainda</p>
+                  </div>
+                `}
+              </div>
+            </div>
+          `;
+        }
+
+        // Painel normal
+        return `
+          <div style="min-height: 100vh; background: #f5f5f5;">
+            <div style="background: ${brandColor}; color: #ffffff; padding: 1.5rem 1rem; display: flex; justify-content: space-between; align-items: center;">
+              <h1 style="font-size: 16px; font-weight: 500; margin: 0;">Painel da Nutricionista</h1>
+              <button onclick="app.logout();" style="background: none; border: none; cursor: pointer; color: inherit; font-size: 18px;">↗</button>
+            </div>
+
+            <div style="padding: 1rem; max-width: 900px; margin: 0 auto; padding-bottom: 2rem;">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                <div style="background: #ffffff; border-radius: 8px; padding: 1rem; border: 0.5px solid ${brandColor}40; text-align: center;">
+                  <p style="font-size: 24px; font-weight: 500; margin: 0; color: ${brandColor};">${this.state.patients.length}</p>
+                  <p style="font-size: 11px; color: #999; margin: 8px 0 0 0;">Pacientes</p>
+                </div>
+                <div style="background: #ffffff; border-radius: 8px; padding: 1rem; border: 0.5px solid #e0e0e0; text-align: center;">
+                  <p style="font-size: 24px; font-weight: 500; margin: 0; color: ${brandColor};">${this.state.meals.length}</p>
+                  <p style="font-size: 11px; color: #999; margin: 8px 0 0 0;">Refeições</p>
+                </div>
+                <div style="background: #ffffff; border-radius: 8px; padding: 1rem; border: 0.5px solid #e0e0e0; text-align: center;">
+                  <p style="font-size: 24px; font-weight: 500; margin: 0; color: ${brandColor};">${this.state.checkins.length}</p>
+                  <p style="font-size: 11px; color: #999; margin: 8px 0 0 0;">Check-ins</p>
+                </div>
+              </div>
+
+              <h2 style="font-size: 13px; font-weight: 500; margin-bottom: 1rem; color: #333;">Minhas pacientes</h2>
+              
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+                ${patientStats.map(patient => `
+                  <div style="background: #ffffff; border-radius: 8px; padding: 1rem; border: 0.5px solid ${brandColor}40;">
+                    <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 0.5px solid #e0e0e0;">
+                      <h3 style="font-size: 14px; font-weight: 500; margin: 0; color: ${brandColor};">${patient.name}</h3>
+                      <p style="font-size: 11px; color: #999; margin: 4px 0 0 0;">${patient.email}</p>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 11px; margin-bottom: 1rem;">
+                      <div>
+                        <p style="color: #999; margin: 0 0 4px 0; font-weight: 500;">Adesão</p>
+                        <p style="font-weight: 500; margin: 0; color: ${patient.adherence >= 80 ? '#28a745' : patient.adherence >= 60 ? '#ffc107' : '#dc3545'};">${patient.adherence}%</p>
+                      </div>
+                      <div>
+                        <p style="color: #999; margin: 0 0 4px 0; font-weight: 500;">Refeições</p>
+                        <p style="font-weight: 500; margin: 0; color: #333;">${patient.mealsCount}</p>
+                      </div>
+                      <div>
+                        <p style="color: #999; margin: 0 0 4px 0; font-weight: 500;">Check-ins</p>
+                        <p style="font-weight: 500; margin: 0; color: #333;">${patient.checkinsCount}</p>
+                      </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 1rem;">
+                      <button onclick="app.state.screen = 'mealHistoryNutrionist'; app.state.selectedPatientPanel = '${patient.id}'; app.render();" style="padding: 8px; background: ${brandColor}; border: 0.5px solid ${brandColor}; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500; color: #ffffff;">
+                        📋 Refeições
+                      </button>
+                      <button onclick="app.state.screen = 'checkinHistory'; app.state.selectedPatientPanel = '${patient.id}'; app.render();" style="padding: 8px; background: #ffffff; border: 0.5px solid ${brandColor}; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500; color: ${brandColor};">
+                        📊 Check-ins
+                      </button>
+                      <button onclick="app.state.screen = 'weightHistoryNutrionist'; app.state.selectedPatientPanel = '${patient.id}'; app.render();" style="padding: 8px; background: #ffffff; border: 0.5px solid ${brandColor}; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500; color: ${brandColor};">
+                        📈 Peso
+                      </button>
+                    </div>
+
+                    ${patient.checkins.length > 0 ? `
+                      <div style="font-size: 11px; padding-top: 1rem; border-top: 0.5px solid #e0e0e0;">
+                        <p style="font-weight: 500; margin: 0 0 8px 0;">Último check-in:</p>
+                        ${(() => {
+                          const lastCheckin = patient.checkins[0];
+                          return `
+                            ${lastCheckin.needsHelp ? `<p style="color: #dc3545; font-weight: 500; margin: 0 0 6px 0;">⚠️ Solicitou ajuda</p>` : ''}
+                            <p style="margin: 0; color: #666;">Adesão: <strong>${lastCheckin.adherence}/5</strong></p>
+                            <p style="margin: 4px 0 0 0; color: #666;">Controle: <strong>${lastCheckin.control}/5</strong></p>
+                          `;
+                        })()}
+                      </div>
+                    ` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        `;
+      },
+
+      saveCheckin() {
+        if (!this.state.formData.adherence || !this.state.formData.hunger || !this.state.formData.sweet || !this.state.formData.energy || !this.state.formData.anxiety || !this.state.formData.control) {
+          this.addNotification('Responda todas as perguntas obrigatórias', 'error');
+          return;
+        }
+
+        const difficulty = document.getElementById('checkinDifficulty').value;
+        const needsHelp = document.getElementById('checkinHelp').checked;
+        this.addCheckin({ ...this.state.formData, difficulty, needsHelp });
+      },
+
+      saveWeight() {
+        const weight = document.getElementById('weightInput').value;
+        const feeling = document.getElementById('weightFeeling').value;
+        if (!weight) {
+          this.addNotification('Informe seu peso', 'error');
+          return;
+        }
+        this.addWeight({ weight, feeling });
+      },
+
+      copyLink(link, name) {
+        navigator.clipboard.writeText(link);
+        this.addNotification(`Link de ${name} copiado!`, 'success');
+      },
+
+      render() {
+        let html = '';
+
+        if (!this.state.user) {
+          html = this.renderLogin();
+        } else if (this.state.user.type === 'patient') {
+          if (this.state.screen === 'dashboard') {
+            html = this.renderDashboard();
+          } else if (this.state.screen === 'meal') {
+            html = this.renderMeal();
+          } else if (this.state.screen === 'mealHistory') {
+            html = this.renderMealHistory();
+          } else if (this.state.screen === 'checkin') {
+            html = this.renderCheckin();
+          } else if (this.state.screen === 'weight') {
+            html = this.renderWeight();
+          } else if (this.state.screen === 'weightHistory') {
+            html = this.renderWeightHistory();
+          }
+        } else if (this.state.user.type === 'nutritionist') {
+          html = this.renderPanel();
+        }
+
+        // Adicionar notificações
+        html += `
+          <div style="position: fixed; top: 1rem; right: 1rem; z-index: 999; max-width: 300px;">
+            ${this.state.notifications.map(notif => `
+              <div class="notification" style="background: ${notif.type === 'success' ? '#28a745' : notif.type === 'error' ? '#dc3545' : '#0066cc'}; color: #ffffff; padding: 12px 16px; border-radius: 6px; margin-bottom: 8px; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                ${notif.message}
+              </div>
+            `).join('')}
+          </div>
+        `;
+
+        document.getElementById('app').innerHTML = html;
+      }
+    };
+
+    app.init();
+  </script>
+</body>
+</html>
